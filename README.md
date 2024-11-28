@@ -1,4 +1,13 @@
 # ERADICATE2
+
+### Compile and run
+
+```
+make clean && make && CL_LOG_ERRORS=stdout ./ERADICATE2.x64 -A 0x48E516B34A1274f49457b9C6182097796D0498Cb -I 0x94d114296a5af85c1fd2dc039cdaa32f1ed4b0fe0868f02d888bfc91feb645d9 --uniswap-v4
+```
+
+### Documentation
+
 ```
 usage: ./ERADICATE2 [OPTIONS]
 

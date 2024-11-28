@@ -1,5 +1,5 @@
 enum ModeFunction {
-	Benchmark, ZeroBytes, Matching, Leading, Range, Mirror, Doubles, LeadingRange
+	Benchmark, ZeroBytes, Matching, Leading, Range, Mirror, Doubles, LeadingRange, UniswapV4
 };
 
 typedef struct {
@@ -24,6 +24,7 @@ void eradicate2_score_range(const uchar * const hash, __global result * const pR
 void eradicate2_score_leadingrange(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
 void eradicate2_score_mirror(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
 void eradicate2_score_doubles(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
+void eradicate2_score_uniswapv4(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
 
 __kernel void eradicate2_iterate(__global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round) {
 	ethhash h = { .q = { ERADICATE2_INITHASH } };
@@ -41,7 +42,7 @@ __kernel void eradicate2_iterate(__global result * const pResult, __global const
 	sha3_keccakf(&h);
 
 	/* enum class ModeFunction {
-	 *      Benchmark, ZeroBytes, Matching, Leading, Range, Mirror, Doubles, LeadingRange
+	 *      Benchmark, ZeroBytes, Matching, Leading, Range, Mirror, Doubles, LeadingRange, UniswapV4
 	 * };
 	 */
 	switch (pMode->function) {
@@ -75,6 +76,10 @@ __kernel void eradicate2_iterate(__global result * const pResult, __global const
 
 	case LeadingRange:
 		eradicate2_score_leadingrange(h.b + 12, pResult, pMode, scoreMax, deviceIndex, round);
+		break;
+
+	case UniswapV4:
+		eradicate2_score_uniswapv4(h.b + 12, pResult, pMode, scoreMax, deviceIndex, round);
 		break;
 	}
 }
@@ -243,3 +248,51 @@ void eradicate2_score_doubles(const uchar * const hash, __global result * const 
 
 	eradicate2_result_update(hash, pResult, score, scoreMax, deviceIndex, round);
 }
+
+int nibbleOf(const uchar * const hash, int index) {
+	return (hash[index>>1] >> (((~index)&1) << 2)) & 0x0f;
+}
+	
+// Addresses will be scored based on the following criteria:
+// - 10 points for each leading 0 nibble
+// - 40 points if the address starts with four consecutive 4s
+// - 20 points if the first nibble after the four 4s is not a 4
+// - 20 points if the last four nibbles are all 4s
+// - 1 point for each 4 elsewhere in the address
+void eradicate2_score_uniswapv4(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round) {
+	const size_t id = get_global_id(0);
+
+	int score = 0;
+	int index = 0;
+	for (index = 0; index < 40; ++index) {
+		if (nibbleOf(hash, index) == 0) {
+			score += 10;
+		} else {
+			break;
+		}
+	}
+	
+	if (nibbleOf(hash, index) == 4 &&
+		nibbleOf(hash, index + 1) == 4 &&
+		nibbleOf(hash, index + 2) == 4 &&
+		nibbleOf(hash, index + 3) == 4)
+	{
+		score += 40;
+		if (nibbleOf(hash, index + 4) != 4) {
+			score += 20;
+		}
+	}
+
+	if (hash[19] == 0x44 && hash[18] == 0x44) {
+		score += 20;
+	}
+
+	for (; index < 36; ++index) {
+		if (nibbleOf(hash, index) == 4) {
+			score += 1;
+		}
+	}
+
+	eradicate2_result_update(hash, pResult, score, scoreMax, deviceIndex, round);
+}
+
